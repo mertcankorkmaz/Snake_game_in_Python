@@ -1,0 +1,365 @@
+import pygame
+import random
+
+class Game:
+    DIFFICULTY_LEVELS = {
+        "Easy": {"speed": 8, "obstacle_frequency": 0.05, "food_count": 1},
+        "Medium": {"speed": 11, "obstacle_frequency": 0.1, "food_count": 1},
+        "Hard": {"speed": 14, "obstacle_frequency": 0.15, "food_count": 2}
+    }
+
+    SNAKE_COLORS = [(0, 255, 0), (0, 0, 255), (255, 0, 0),(255, 128, 0), (255, 0, 255), (128, 0, 255), (0, 255, 255)]  # Yeni renk eklendi
+    FOOD_COLORS =  [(0, 255, 0), (0, 0, 255), (255, 0, 0),(255, 128, 0), (255, 0, 255), (128, 0, 255), (0, 255, 255)]  # Yeni renk eklendi
+
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.head_color = (0, 255, 0)
+        self.body_color = (0, 100, 0)
+        self.food_color = (255, 0, 0)
+        self.bonus_food_color = (255, 255, 0)  # Define bonus food color
+        self.obstacle_color = (100, 100, 100)
+        self.background_color = (20, 20, 20)
+        self.snake = [(width // 2, height // 2)]
+        self.food = []
+        self.bonus_food = []  # Track bonus food
+        self.obstacles = []
+        self.direction = "RIGHT"
+        pygame.init()
+        self.display = pygame.display.set_mode((width, height))
+        self.clock = pygame.time.Clock()
+        self.game_over = False
+        self.grow_snake_next_move = False
+        self.score = 0
+        self.high_score = self.load_high_score()
+        self.font = pygame.font.Font(None, 30)
+        self.difficulty_index = 0
+        self.difficulty_options = list(self.DIFFICULTY_LEVELS.keys()) + ["Quit"]
+        self.difficulty = self.difficulty_options[self.difficulty_index]
+        self.menu = True
+        self.settings_index = 0
+
+    def draw_color_menu(self, is_snake=True):
+        title_text = "Choose Snake Color" if is_snake else "Choose Food Color"
+        colors = self.SNAKE_COLORS if is_snake else self.FOOD_COLORS
+        current_color = self.head_color if is_snake else self.food_color
+        #self.display.blit(high_score_text, (self.width // 2 - high_score_text.get_width() // 2, self.height // 2 + 50))
+        self.display.fill(self.background_color)
+        title_text = self.font.render(f"Snake Game - {title_text}", True, (255, 255, 255))
+        self.display.blit(title_text, (self.width // 2 - title_text.get_width() // 2, 50))
+        for i, color in enumerate(colors):
+            pygame.draw.rect(self.display, color, pygame.Rect(self.width // 2 - 100, 150 + i * 50, 200, 40))
+            if color == current_color:
+                pygame.draw.rect(self.display, (255, 255, 255), pygame.Rect(self.width // 2 - 105, 145 + i * 50, 210, 50), 3)
+        pygame.display.flip()
+
+    def select_color(self, is_snake=True):
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        colors = self.SNAKE_COLORS if is_snake else self.FOOD_COLORS
+                        current_index = colors.index(self.head_color if is_snake else self.food_color)
+                        new_index = (current_index - 1) % len(colors)
+                        if is_snake:
+                            self.head_color = colors[new_index]
+                        else:
+                            self.food_color = colors[new_index]
+                    elif event.key == pygame.K_DOWN:
+                        colors = self.SNAKE_COLORS if is_snake else self.FOOD_COLORS
+                        current_index = colors.index(self.head_color if is_snake else self.food_color)
+                        new_index = (current_index + 1) % len(colors)
+                        if is_snake:
+                            self.head_color = colors[new_index]
+                        else:
+                            self.food_color = colors[new_index]
+                    elif event.key == pygame.K_RETURN:
+                        return
+            self.draw_color_menu(is_snake)
+            self.clock.tick(30)
+
+    def generate_food(self):
+        self.food = []
+        food_count = self.DIFFICULTY_LEVELS[self.difficulty]["food_count"]
+        for _ in range(food_count):
+            food_position = (random.randint(0, self.width // 20 - 1) * 20, random.randint(0, self.height // 20 - 1) * 20)
+            while food_position in self.snake or food_position in self.obstacles or food_position in self.food:
+                food_position = (random.randint(0, self.width // 20 - 1) * 20, random.randint(0, self.height // 20 - 1) * 20)
+            self.food.append(food_position)
+
+    def generate_bonus_food(self):  # Function to generate bonus food
+        bonus_food_position = (random.randint(0, self.width // 20 - 1) * 20, random.randint(0, self.height // 20 - 1) * 20)
+        while bonus_food_position in self.snake or bonus_food_position in self.obstacles or bonus_food_position in self.food or bonus_food_position in self.bonus_food:
+            bonus_food_position = (random.randint(0, self.width // 20 - 1) * 20, random.randint(0, self.height // 20 - 1) * 20)
+        self.bonus_food.append(bonus_food_position)
+
+    def generate_obstacle(self):
+        obstacle_position = (random.randint(0, self.width // 20 - 1) * 20, random.randint(0, self.height // 20 - 1) * 20)
+        while obstacle_position in self.snake or obstacle_position in self.obstacles or obstacle_position in self.food or obstacle_position in self.bonus_food:  # Check if obstacle overlaps with snake, food, or bonus food
+            obstacle_position = (random.randint(0, self.width // 20 - 1) * 20, random.randint(0, self.height // 20 - 1) * 20)
+        self.obstacles.append(obstacle_position)
+
+    def load_high_score(self):
+        try:
+            with open("highscore.txt", "r") as file:
+                return int(file.read())
+        except FileNotFoundError:
+            return 0
+
+    def save_high_score(self):
+        with open("highscore.txt", "w") as file:
+            file.write(str(self.high_score))
+
+    def draw_menu(self):
+        self.display.fill(self.background_color)
+        title_text = self.font.render("Snake Game", True, (255, 255, 255))
+        self.display.blit(title_text, (self.width // 2 - title_text.get_width() // 2, 50))
+        for i, option in enumerate(self.difficulty_options):
+            text = self.font.render(option, True, (255, 255, 255))
+            if i == self.difficulty_index:
+                pygame.draw.rect(self.display, (255, 0, 0), pygame.Rect(self.width // 2 - 100, 150 + i * 50, 200, 40))
+            else:
+                pygame.draw.rect(self.display, (0, 255, 0), pygame.Rect(self.width // 2 - 100, 150 + i * 50, 200, 40))
+            self.display.blit(text, (self.width // 2 - text.get_width() // 2, 150 + i * 50))
+        pygame.display.flip()
+
+    def change_difficulty(self, direction):
+        if direction == "UP":
+            self.difficulty_index = (self.difficulty_index - 1) % len(self.difficulty_options)
+        elif direction == "DOWN":
+            self.difficulty_index = (self.difficulty_index + 1) % len(self.difficulty_options)
+        self.difficulty = self.difficulty_options[self.difficulty_index]
+
+    def select_difficulty(self):
+        if self.difficulty == "Quit":
+            pygame.quit()
+        else:
+            self.speed = self.DIFFICULTY_LEVELS[self.difficulty]["speed"]
+            self.generate_food()
+            self.generate_bonus_food()  # Generate bonus food along with normal food
+            self.menu = False
+
+    def draw(self):
+        self.display.fill(self.background_color)
+        trap_warning_text = self.font.render("Yellow -1 points but shortens the tail", True, (255, 255, 0))
+        score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
+        high_score_text = self.font.render(f"High Score: {self.high_score}", True, (255, 255, 255))
+        self.display.blit(trap_warning_text, (self.width // 2 - trap_warning_text.get_width() // 2, 10))
+        self.display.blit(score_text, (10, 10))
+        self.display.blit(high_score_text, (self.width - high_score_text.get_width() - 10, 10))
+        
+        pygame.draw.circle(self.display, self.head_color, (self.snake[0][0] + 10, self.snake[0][1] + 10), 10)
+        for segment in self.snake[1:]:
+            pygame.draw.circle(self.display, self.body_color, (segment[0] + 10, segment[1] + 10), 10)
+        for f in self.food:
+            pygame.draw.rect(self.display, self.food_color, pygame.Rect(f[0], f[1], 20, 20))
+        for bf in self.bonus_food:  # Draw bonus food
+            pygame.draw.rect(self.display, self.bonus_food_color, pygame.Rect(bf[0], bf[1], 20, 20))
+        for obstacle in self.obstacles:
+            pygame.draw.rect(self.display, self.obstacle_color, pygame.Rect(obstacle[0], obstacle[1], 20, 20))
+        pygame.display.flip()
+
+    def check_collision(self):
+        if self.snake[0] in self.snake[1:] or self.snake[0] in self.obstacles:
+            self.game_over = True
+
+    def grow_snake(self, is_bonus=False):  # Add is_bonus parameter
+        if not is_bonus:  # If normal food is eaten, increase snake size by 2
+            self.grow_snake_next_move = True
+            self.score += 1
+            if self.score > self.high_score:
+                self.high_score = self.score
+            self.generate_bonus_food()
+        else:  # If bonus food is eaten, decrease snake size by 1
+            if len(self.snake) <= 1:
+                self.game_over = True
+            else:
+                self.snake.pop()
+                if len(self.snake) <= 1:
+                    self.game_over = True
+                else:
+                    self.snake.pop()
+                    if len(self.snake) <= 1:
+                        self.game_over = True
+                    else:
+                        self.snake.pop()
+            self.score -= 1
+            if self.score > self.high_score:
+                self.high_score = self.score
+
+    def direction_to_offset(self):
+        if self.direction == "LEFT":
+            return -20, 0
+        elif self.direction == "RIGHT":
+            return 20, 0
+        elif self.direction == "UP":
+            return 0, -20
+        elif self.direction == "DOWN":
+            return 0, 20
+
+    def game_over_screen(self):
+        self.display.fill(self.background_color)
+        game_over_text = self.font.render("Game Over!", True, (255, 255, 255))
+        score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
+        high_score_text = self.font.render(f"High Score: {self.high_score}", True, (255, 255, 255))
+        self.display.blit(game_over_text, (self.width // 2 - game_over_text.get_width() // 2, self.height // 2 - 50))
+        self.display.blit(score_text, (self.width // 2 - score_text.get_width() // 2, self.height // 2))
+
+        pygame.display.flip()
+        pygame.time.wait(2000)
+        self.save_high_score()
+
+        waiting = True
+        while waiting:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                elif event.type == pygame.KEYDOWN:
+                    waiting = False
+
+        self.menu = True
+        self.__init__(self.width, self.height)
+        self.game_loop()
+
+    def pause_game(self):
+        options = ["Resume", "Restart", "Quit"]
+        current_option = 0
+        paused = True
+        while paused:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        current_option = (current_option - 1) % len(options)
+                    elif event.key == pygame.K_DOWN:
+                        current_option = (current_option + 1) % len(options)
+                    elif event.key == pygame.K_RETURN:
+                        if current_option == 0:
+                            paused = False
+                        elif current_option == 1:
+                            self.game_over = True
+                            self.menu = True
+                            self.__init__(self.width, self.height)
+                            self.game_loop()
+                        elif current_option == 2:
+                            pygame.quit()
+
+            self.display.fill(self.background_color)
+            pause_text = self.font.render("Game Paused", True, (255, 255, 255))
+            self.display.blit(pause_text, (self.width // 2 - pause_text.get_width() // 2, self.height // 2 - 100))
+
+            for i, option in enumerate(options):
+                text = self.font.render(option, True, (255, 255, 255))
+                if i == current_option:
+                    pygame.draw.rect(self.display, (255, 0, 0), pygame.Rect(self.width // 2 - 100, self.height // 2 + i * 50, 200, 40))
+                else:
+                    pygame.draw.rect(self.display, (0, 255, 0), pygame.Rect(self.width // 2 - 100, self.height // 2 + i * 50, 200, 40))
+                self.display.blit(text, (self.width // 2 - text.get_width() // 2, self.height // 2 + i * 50))
+
+            pygame.display.flip()
+            self.clock.tick(30)
+
+    def draw_settings_menu(self):
+        self.display.fill(self.background_color)
+        title_text = self.font.render("Settings", True, (255, 255, 255))
+        self.display.blit(title_text, (self.width // 2 - title_text.get_width() // 2, 50))
+        options = ["Change Snake Color", "Change Food Color", "Start Game", "Quit"]  # "Quit" seçeneğini ekle
+        for i, option in enumerate(options):
+            text = self.font.render(option, True, (255, 255, 255))
+            if i == self.settings_index:
+                pygame.draw.rect(self.display, (255, 0, 0), pygame.Rect(self.width // 2 - 100, 150 + i * 50, 200, 40))
+            else:
+                pygame.draw.rect(self.display, (0, 255, 0), pygame.Rect(self.width // 2 - 100, 150 + i * 50, 200, 40))
+            self.display.blit(text, (self.width // 2 - text.get_width() // 2, 150 + i * 50))
+        pygame.display.flip()
+
+    def select_settings(self):
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        self.settings_index = (self.settings_index - 1) % 4  # 4'e çıkar
+                    elif event.key == pygame.K_DOWN:
+                        self.settings_index = (self.settings_index + 1) % 4  # 4'e çıkar
+                    elif event.key == pygame.K_RETURN:
+                        if self.settings_index == 0:
+                            self.select_color()
+                        elif self.settings_index == 1:
+                            self.select_color(False)
+                        elif self.settings_index == 2:
+                            self.menu = False
+                            return
+                        elif self.settings_index == 3:  # "Quit" seçeneği
+                            pygame.quit()
+            self.draw_settings_menu()
+            self.clock.tick(30)
+
+    def game_loop(self):
+        while self.menu:
+            self.draw_menu()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        self.change_difficulty("UP")
+                    elif event.key == pygame.K_DOWN:
+                        self.change_difficulty("DOWN")
+                    elif event.key == pygame.K_RETURN:
+                        self.select_difficulty()
+                        self.select_settings()
+
+        while not self.game_over:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.game_over = True
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT and self.direction != "RIGHT":
+                        self.direction = "LEFT"
+                    elif event.key == pygame.K_RIGHT and self.direction != "LEFT":
+                        self.direction = "RIGHT"
+                    elif event.key == pygame.K_UP and self.direction != "DOWN":
+                        self.direction = "UP"
+                    elif event.key == pygame.K_DOWN and self.direction != "UP":
+                        self.direction = "DOWN"
+                    elif event.key == pygame.K_ESCAPE:
+                        self.pause_game()
+
+            if self.grow_snake_next_move:
+                self.snake.append(self.snake[-1])
+                self.grow_snake_next_move = False
+
+            head = self.snake[0]
+            dx, dy = self.direction_to_offset()
+            new_head = ((head[0] + dx) % self.width, (head[1] + dy) % self.height)
+            self.snake.insert(0, new_head)
+
+            if new_head in self.food:
+                self.food.remove(new_head)
+                self.generate_food()
+                self.grow_snake()
+                self.generate_obstacle()
+            elif new_head in self.bonus_food:  # Check if snake eats bonus food
+                self.bonus_food.remove(new_head)
+                self.generate_bonus_food()
+                self.grow_snake(is_bonus=True)  # Call grow_snake with is_bonus=True
+                self.generate_obstacle()
+            else:
+                self.snake.pop()
+
+            self.check_collision()
+            self.draw()
+            self.clock.tick(self.speed)
+
+        self.game_over_screen()
+
+if __name__ == "__main__":
+    pygame.init()
+    width, height = 800, 600
+    game = Game(width, height)
+    game.game_loop()
